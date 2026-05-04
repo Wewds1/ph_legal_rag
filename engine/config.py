@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     database_url: str
     llm_provider: str = "gemini"
     llm_api_key: str = ""
-    llm_model: str = "gemini-1.5-flash"
+    llm_model: str = "gemini-3.0-flash-preview"
     embedding_provider: str = "gemini"
     embedding_model: str = "text-embedding-004"
 
