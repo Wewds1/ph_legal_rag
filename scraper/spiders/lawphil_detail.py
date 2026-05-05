@@ -1,4 +1,5 @@
 from datetime import datetime, UTC
+from pathlib import Path
 import scrapy
 from scraper.items import RawCaseItem
 
@@ -7,9 +8,13 @@ class LawphilDetailSpider(scrapy.Spider):
     name = "lawphil_detail"
     allowed_domains = ["lawphil.net"]
 
-    start_urls = [
-        # replace with real detail URLs during testing
-    ]
+    def start_requests(self):
+        links_file = Path("scraper/spiders/links/lawphil_links.txt")
+        with open(links_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and line.startswith("http"):
+                    yield scrapy.Request(line, callback=self.parse)
 
     def parse(self, response):
         item = RawCaseItem()
