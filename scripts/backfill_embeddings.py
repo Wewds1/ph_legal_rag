@@ -4,6 +4,7 @@ import google.generativeai as genai
 from sqlalchemy import text
 from engine.config import settings
 from database.connection import SessionLocal
+import json
 import time
 
 
@@ -13,28 +14,30 @@ BATCH_SIZE = 32
 def embed_texts(texts: list[str]) -> list[list[float]]:
     """Generate embeddings using Gemini API."""
     if not settings.llm_api_key:
-        print("⚠️ LLM_API_KEY not set. Skipping embeddings.")
+        print("LLM_API_KEY not set. Skipping embeddings.")
         return [[0.0] * 768 for _ in texts]
     
     try:
         genai.configure(api_key=settings.llm_api_key)
-        model = genai.GenerativeModel(settings.embedding_model)
         
         embeddings = []
         for text in texts:
-            result = model.embed_content(text)
+            result = genai.embed_content(
+                model="models/embedding-001",
+                content=text
+            )
             embeddings.append(result["embedding"])
         
         return embeddings
     except Exception as e:
-        print(f"❌ Embedding error: {e}")
+        print(f"Embedding error: {e}")
         return [[0.0] * 768 for _ in texts]
 
 
 def main():
     db = SessionLocal()
     
-    print("🔍 Finding chunks without embeddings...")
+    print("Finding chunks without embeddings...")
     
     # Count total chunks needing embeddings
     count_stmt = text("""
@@ -42,10 +45,10 @@ def main():
         WHERE embedding_text IS NULL
     """)
     total = db.execute(count_stmt).scalar()
-    print(f"📊 Found {total} chunks to embed")
+    print(f"Found {total} chunks to embed")
     
     if total == 0:
-        print("✅ All chunks already embedded!")
+        print("All chunks already embedded!")
         db.close()
         return
     
@@ -67,41 +70,41 @@ def main():
         chunk_ids = [row[0] for row in rows]
         texts = [row[1] for row in rows]
         
-        print(f"\n📦 Processing batch of {len(texts)} chunks...")
+        print(f"Processing batch of {len(texts)} chunks...")
         
         try:
             embeddings = embed_texts(texts)
             
-            # Update each chunk
+            # Update each chunk with embedding
             for chunk_id, embedding in zip(chunk_ids, embeddings):
-                update_stmt = text("""
+                # Store as JSON string (embedding_text is TEXT column)
+                vector_json = json.dumps(embedding)
+                
+                update_stmt = text(f"""
                     UPDATE case_chunks
-                    SET embedding = :embedding::vector
-                    WHERE id = :id
+                    SET embedding_text = '{vector_json}'
+                    WHERE id = '{str(chunk_id)}'
                 """)
                 
-                # Convert embedding to PostgreSQL vector format
-                vector_str = "[" + ",".join(map(str, embedding)) + "]"
-                
-                db.execute(update_stmt, {"embedding": vector_str, "id": str(chunk_id)})
+                db.execute(update_stmt)
             
             db.commit()
             processed += len(texts)
-            print(f"✅ Embedded {len(texts)} chunks ({processed}/{total})")
+            print(f"Embedded {len(texts)} chunks ({processed}/{total})")
             
             time.sleep(1)  # Rate limiting
             
         except Exception as e:
             db.rollback()
             failed += len(texts)
-            print(f"❌ Batch failed: {e}")
+            print(f"Batch failed: {e}")
             break
     
     db.close()
     
-    print(f"\n🎉 Backfill complete!")
-    print(f"   ✅ Processed: {processed}")
-    print(f"   ❌ Failed: {failed}")
+    print("\nBackfill complete!")
+    print(f"   Processed: {processed}")
+    print(f"   Failed: {failed}")
 
 
 if __name__ == "__main__":
