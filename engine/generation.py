@@ -21,21 +21,34 @@ class Generator:
                 "precedents": cases,
                 "disclaimer": "This is legal research only, not legal advice."
             }
+            
+        # If no cases found, let LLM just chat/help generally
+        if not cases:
+            prompt = f'User asked: "{query}"\n\nNo specific cases matched, but help them out with what you know!'
+            response = self.model.generate_content(
+                f"{SYSTEM_PROMPT}\n\n{prompt}"
+            )
+            return {
+                "answer": response.text,
+                "precedents": [],
+                "disclaimer": "This is just research, not legal advice—talk to an actual lawyer before doing anything based on this!"
+            }
         
+        # If cases found, provide context but keep it concise
         context = "\n\n".join([
-            f"📋 **{c['title']}**\n🔗 G.R. No.: {c['gr_no']}\n🌐 Source: {c['source_url']}\n\nExcerpt: {c['snippet']}"
+            f"📋 **{c['title']}**\n🔗 G.R. No.: {c['gr_no']}\n🌐 {c['source_url']}\n\n{c['snippet']}"
             for c in cases
         ])
 
-        prompt = f"""Alright, here's what I found in the case law:
+        prompt = f"""Found these cases:
 
 {context}
 
 ---
 
-Now, someone asked me: "{query}"
+User asked: "{query}"
 
-Break it down for them! Explain the cases, use analogies, be funny if you can, and show them how these precedents apply. Make it feel like you're explaining it to a friend, not a law textbook."""
+Explain how these cases relate to their question. Keep it short and conversational."""
 
         response = self.model.generate_content(
             f"{SYSTEM_PROMPT}\n\n{prompt}"
@@ -44,5 +57,5 @@ Break it down for them! Explain the cases, use analogies, be funny if you can, a
         return {
             "answer": response.text,
             "precedents": cases,
-            "disclaimer": "This is just research, not legal advice. Talk to an actual lawyer before doing anything based on this!"
+            "disclaimer": "This is just research, not legal advice—talk to an actual lawyer before doing anything based on this!"
         }
