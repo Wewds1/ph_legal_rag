@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⚖️ Philippine Legal RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:         #f7f6f2;
+    --surface:    #ffffff;
+    --border:     #e4e1d9;
+    --ink:        #1a1a18;
+    --ink-2:      #5c5b56;
+    --ink-3:      #9b9990;
+    --accent:     #c0392b;
+    --accent-h:   #a93226;
+    --accent-dim: #fdf0ef;
+    --serif:      'Libre Baskerville', Georgia, serif;
+    --sans:       'DM Sans', system-ui, sans-serif;
+    --radius:     10px;
+    --shadow-sm:  0 1px 4px rgba(0,0,0,.06);
+    --shadow-md:  0 4px 24px rgba(0,0,0,.09);
+    --shadow-lg:  0 12px 48px rgba(0,0,0,.14);
+    --chat-w:     380px;
+    --chat-h:     520px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(247,246,242,.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 48px;
+    height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-logo {
+    font-family: var(--serif);
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .nav-logo span { color: var(--accent); }
+  .nav-tag {
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 96px 24px 72px;
+    text-align: center;
+    animation: fadeUp .6s ease both;
+  }
+  .hero-eyebrow {
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 22px;
+  }
+  .hero-title {
+    font-family: var(--serif);
+    font-size: clamp(2.4rem, 5.5vw, 3.8rem);
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-bottom: 20px;
+  }
+  .hero-sub {
+    font-size: 1.05rem;
+    color: var(--ink-2);
+    line-height: 1.7;
+    font-weight: 300;
+    max-width: 560px;
+    margin: 0 auto 52px;
+  }
+
+  /* ── SEARCH BOX ── */
+  .search-wrap {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+    animation: fadeUp .6s .15s ease both;
+  }
+  .search-box {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    transition: box-shadow .2s, border-color .2s;
+  }
+  .search-box:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(192,57,43,.1), var(--shadow-md);
+  }
+  .search-icon {
+    flex-shrink: 0;
+    width: 52px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-3);
+  }
+  .search-icon svg { width: 20px; height: 20px; }
+  #search-input {
+    flex: 1;
+    border: none; outline: none; background: transparent;
+    font-family: var(--sans);
+    font-size: 1.05rem;
+    color: var(--ink);
+    padding: 20px 8px;
+    min-width: 0;
+  }
+  #search-input::placeholder { color: var(--ink-3); }
+  #search-btn {
+    flex-shrink: 0;
+    margin: 8px;
+    padding: 12px 28px;
+    background: var(--accent);
+    color: #fff;
+    border: none; outline: none;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .18s, transform .12s;
+    white-space: nowrap;
+  }
+  #search-btn:hover { background: var(--accent-h); transform: translateY(-1px); }
+  #search-btn:active { transform: translateY(0); }
+
+  .search-hints {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .hint-chip {
+    font-size: .78rem;
+    color: var(--ink-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+    user-select: none;
+  }
+  .hint-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── RESULTS AREA ── */
+  .results-section {
+    max-width: 780px;
+    margin: 56px auto 120px;
+    padding: 0 24px;
+    animation: fadeUp .4s ease both;
+  }
+  .results-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .results-title {
+    font-family: var(--serif);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .results-count {
+    font-size: .76rem; font-weight: 600;
+    background: var(--accent-dim);
+    color: var(--accent);
+    padding: 3px 10px; border-radius: 20px;
+  }
+
+  /* ── CASE CARD ── */
+  .case-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 26px 30px;
+    margin-bottom: 14px;
+    position: relative;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow .2s, transform .2s;
+    cursor: default;
+  }
+  .case-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+  .case-card::before {
+    content: '';
+    position: absolute; left: 0; top: 18%; bottom: 18%;
+    width: 3px; background: var(--accent);
+    border-radius: 0 2px 2px 0;
+  }
+  .case-gr {
+    display: inline-block;
+    font-size: .7rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-dim);
+    padding: 3px 10px; border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  .case-title {
+    font-family: var(--serif);
+    font-size: 1.05rem; font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 10px;
+    line-height: 1.4;
+  }
+  .case-snippet {
+    font-size: .88rem; color: var(--ink-2);
+    line-height: 1.75; margin-bottom: 16px;
+  }
+  .case-link {
+    font-size: .8rem; font-weight: 600;
+    color: var(--accent); text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color .15s;
+  }
+  .case-link:hover { border-bottom-color: var(--accent); }
+
+  /* ── EMPTY / ERROR STATES ── */
+  .state-box {
+    text-align: center;
+    padding: 64px 24px;
+    color: var(--ink-3);
+  }
+  .state-box svg { width: 40px; height: 40px; margin-bottom: 16px; opacity: .35; }
+  .state-title {
+    font-family: var(--serif);
+    font-size: 1.1rem; color: var(--ink-2);
+    margin-bottom: 8px;
+  }
+  .state-sub { font-size: .86rem; }
+
+  /* ── LOADING SKELETON ── */
+  .skeleton { animation: shimmer 1.4s infinite; }
+  .sk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 26px 30px;
+    margin-bottom: 14px;
+  }
+  .sk-line {
+    background: linear-gradient(90deg, #ede9e0 25%, #f5f3ee 50%, #ede9e0 75%);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ════════════════════════════
+     CHAT WIDGET
+  ════════════════════════════ */
+  #chat-fab {
+    position: fixed; bottom: 28px; right: 28px; z-index: 500;
+    width: 58px; height: 58px;
+    background: var(--accent);
+    border: none; border-radius: 50%;
+    color: #fff; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(192,57,43,.45);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .18s, transform .18s, box-shadow .18s;
+  }
+  #chat-fab:hover {
+    background: var(--accent-h);
+    transform: scale(1.08);
+    box-shadow: 0 6px 28px rgba(192,57,43,.55);
+  }
+  #chat-fab svg { width: 24px; height: 24px; }
+  #chat-fab .fab-close { display: none; }
+  #chat-fab.open .fab-open  { display: none; }
+  #chat-fab.open .fab-close { display: block; }
+
+  #chat-panel {
+    position: fixed; bottom: 98px; right: 28px; z-index: 499;
+    width: var(--chat-w);
+    max-height: var(--chat-h);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    /* closed state */
+    opacity: 0; transform: translateY(16px) scale(.97);
+    pointer-events: none;
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  #chat-panel.open {
+    opacity: 1; transform: translateY(0) scale(1);
+    pointer-events: all;
+  }
+
+  .chat-header {
+    background: var(--accent);
+    padding: 16px 20px;
+    display: flex; align-items: center; gap: 12px;
+    flex-shrink: 0;
+  }
+  .chat-avatar {
+    width: 36px; height: 36px;
+    background: rgba(255,255,255,.2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: .95rem;
+    color: #fff; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .chat-header-info { flex: 1; min-width: 0; }
+  .chat-header-name {
+    font-size: .92rem; font-weight: 600;
+    color: #fff; line-height: 1.2;
+  }
+  .chat-header-sub {
+    font-size: .72rem; color: rgba(255,255,255,.7);
+    margin-top: 2px;
+  }
+  .chat-online-dot {
+    width: 8px; height: 8px;
+    background: #5cdb95; border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(92,219,149,.3);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(92,219,149,.3); }
+    50%       { box-shadow: 0 0 0 5px rgba(92,219,149,.1); }
+  }
+
+  /* messages */
+  #chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    scroll-behavior: smooth;
+  }
+  #chat-messages::-webkit-scrollbar { width: 4px; }
+  #chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .msg {
+    display: flex; gap: 8px;
+    animation: msgIn .2s ease both;
+  }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg.user { flex-direction: row-reverse; }
+  .msg-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; font-weight: 700;
+    color: var(--ink-2); flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .msg.bot .msg-avatar { background: var(--accent-dim); color: var(--accent); }
+  .msg-bubble {
+    max-width: 82%;
+    padding: 11px 14px;
+    border-radius: 14px;
+    font-size: .86rem; line-height: 1.65;
+  }
+  .msg.bot .msg-bubble {
+    background: var(--bg);
+    color: var(--ink);
+    border-radius: 4px 14px 14px 14px;
+  }
+  .msg.user .msg-bubble {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 14px 4px 14px 14px;
+  }
+  .msg-bubble .case-ref {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,.15);
+    border-radius: 6px;
+    font-size: .78rem;
+  }
+  .msg.bot .msg-bubble .case-ref {
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .case-ref-gr { font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+  .case-ref-title { font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  .case-ref-link { color: var(--accent); font-size: .75rem; text-decoration: none; }
+  .case-ref-link:hover { text-decoration: underline; }
+
+  .typing-indicator {
+    display: flex; gap: 4px; padding: 4px 0;
+  }
+  .typing-dot {
+    width: 7px; height: 7px;
+    background: var(--ink-3); border-radius: 50%;
+    animation: bounce .9s infinite;
+  }
+  .typing-dot:nth-child(2) { animation-delay: .15s; }
+  .typing-dot:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30%           { transform: translateY(-5px); }
+  }
+
+  /* disclaimer strip in chat */
+  .chat-disclaimer {
+    padding: 8px 16px;
+    background: var(--accent-dim);
+    border-top: 1px solid #f0d0ce;
+    font-size: .7rem; color: #9a2e26; line-height: 1.5;
+    flex-shrink: 0;
+    text-align: center;
+  }
+
+  /* input row */
+  .chat-input-row {
+    display: flex; gap: 8px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  #chat-input {
+    flex: 1;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: var(--sans); font-size: .88rem;
+    color: var(--ink); background: var(--bg);
+    outline: none; resize: none;
+    min-height: 42px; max-height: 120px;
+    line-height: 1.5;
+    transition: border-color .18s;
+  }
+  #chat-input:focus { border-color: var(--accent); }
+  #chat-input::placeholder { color: var(--ink-3); }
+  #chat-send {
+    width: 40px; height: 40px; flex-shrink: 0;
+    background: var(--accent); border: none;
+    border-radius: 8px; color: #fff;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    align-self: flex-end;
+    transition: background .15s, transform .12s;
+  }
+  #chat-send:hover { background: var(--accent-h); transform: scale(1.05); }
+  #chat-send svg { width: 18px; height: 18px; }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 600px) {
+    nav { padding: 0 20px; }
+    .hero { padding: 64px 20px 48px; }
+    :root { --chat-w: calc(100vw - 32px); }
+    #chat-panel { right: 16px; bottom: 90px; }
+    #chat-fab   { right: 16px; bottom: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">⚖️ Legal<span>PH</span></a>
+  <span class="nav-tag">Philippine Jurisprudence Search</span>
+</nav>
+
+<!-- HERO + SEARCH -->
+<div class="hero">
+  <p class="hero-eyebrow">Philippine Supreme Court Database</p>
+  <h1 class="hero-title">Search Cases &amp; Jurisprudence</h1>
+  <p class="hero-sub">Find Supreme Court decisions, G.R. numbers, and legal precedents from the Philippine jurisprudence corpus instantly.</p>
+
+  <div class="search-wrap">
+    <div class="search-box">
+      <span class="search-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+      </span>
+      <input id="search-input" type="text"
+        placeholder="Search by case name, G.R. number, or legal topic…" autocomplete="off" />
+      <button id="search-btn">Search</button>
+    </div>
+
+    <div class="search-hints">
+      <span class="hint-chip" onclick="fillSearch('defamation')">Defamation</span>
+      <span class="hint-chip" onclick="fillSearch('estafa')">Estafa</span>
+      <span class="hint-chip" onclick="fillSearch('habeas corpus')">Habeas corpus</span>
+      <span class="hint-chip" onclick="fillSearch('labor rights')">Labor rights</span>
+      <span class="hint-chip" onclick="fillSearch('grave abuse of discretion')">Grave abuse of discretion</span>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="results-section" id="results-section" style="display:none"></div>
+
+<!-- CHAT FAB -->
+<button id="chat-fab" aria-label="Open legal assistant chat">
+  <svg class="fab-open" xmlns="http://www.w3.org/2000/svg" fill="none"
+    viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round"
+      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+  </svg>
+  <svg class="fab-close" xmlns="http://www.w3.org/2000/svg" fill="none"
+    viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+  </svg>
+</button>
+
+<!-- CHAT PANEL -->
+<div id="chat-panel" role="dialog" aria-label="Legal assistant chat">
+  <div class="chat-header">
+    <div class="chat-avatar">L</div>
+    <div class="chat-header-info">
+      <div class="chat-header-name">LegalPH Assistant</div>
+      <div class="chat-header-sub">Ask about Philippine law</div>
+    </div>
+    <div class="chat-online-dot"></div>
+  </div>
+
+  <div id="chat-messages">
+    <!-- welcome message -->
+    <div class="msg bot">
+      <div class="msg-avatar">L</div>
+      <div class="msg-bubble">
+        Hello! I can answer questions about Philippine law and jurisprudence. What would you like to know?
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-disclaimer">
+    For research purposes only. Not a substitute for legal counsel.
+  </div>
+
+  <div class="chat-input-row">
+    <textarea id="chat-input" rows="1"
+      placeholder="Ask about Philippine law…"></textarea>
+    <button id="chat-send" aria-label="Send">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+        stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+/* ── Utility ── */
+function esc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Search ── */
+const searchInput = document.getElementById('search-input');
+const searchBtn   = document.getElementById('search-btn');
+const resultsEl   = document.getElementById('results-section');
+
+function fillSearch(term) {
+  searchInput.value = term;
+  searchInput.focus();
+}
+
+function renderSkeleton() {
+  return Array.from({length:3}, () => `
+    <div class="sk-card">
+      <div class="sk-line skeleton" style="width:80px;height:22px;margin-bottom:14px"></div>
+      <div class="sk-line skeleton" style="width:70%;height:18px;margin-bottom:8px"></div>
+      <div class="sk-line skeleton" style="width:100%;height:13px;margin-bottom:6px"></div>
+      <div class="sk-line skeleton" style="width:90%;height:13px;margin-bottom:6px"></div>
+      <div class="sk-line skeleton" style="width:60%;height:13px"></div>
+    </div>`).join('');
+}
+
+function renderCaseCard(c) {
+  return `
+    <div class="case-card">
+      <div class="case-gr">G.R. No. ${esc(c.gr_no)}</div>
+      <div class="case-title">${esc(c.case_title)}</div>
+      <div class="case-snippet">${esc(c.snippet)}</div>
+      <a href="${esc(c.source_url)}" target="_blank" rel="noopener" class="case-link">
+        Read full decision &rarr;
+      </a>
+    </div>`;
+}
+
+async function doSearch() {
+  const q = searchInput.value.trim();
+  if (!q) return;
+
+  resultsEl.style.display = 'block';
+  resultsEl.innerHTML = renderSkeleton();
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const res = await fetch(`${API}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q })
+    });
+
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+
+    if (!data.results || data.results.length === 0) {
+      resultsEl.innerHTML = `
+        <div class="state-box">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/>
+          </svg>
+          <div class="state-title">No cases found</div>
+          <div class="state-sub">Try a different keyword, G.R. number, or legal concept.</div>
+        </div>`;
+      return;
+    }
+
+    resultsEl.innerHTML = `
+      <div class="results-header">
+        <span class="results-title">Results</span>
+        <span class="results-count">${data.results.length} case${data.results.length !== 1 ? 's' : ''} found</span>
+      </div>
+      ${data.results.map(renderCaseCard).join('')}`;
+
+  } catch (err) {
+    resultsEl.innerHTML = `
+      <div class="state-box">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <div class="state-title">Could not reach the server</div>
+        <div class="state-sub">Make sure your API is running on port 8000.</div>
+      </div>`;
+  }
+}
+
+searchBtn.addEventListener('click', doSearch);
+searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+/* ── Chat FAB toggle ── */
+const fab       = document.getElementById('chat-fab');
+const chatPanel = document.getElementById('chat-panel');
+
+fab.addEventListener('click', () => {
+  const open = chatPanel.classList.toggle('open');
+  fab.classList.toggle('open', open);
+  if (open) document.getElementById('chat-input').focus();
+});
+
+/* ── Chat send ── */
+const chatMessages = document.getElementById('chat-messages');
+const chatInput    = document.getElementById('chat-input');
+const chatSend     = document.getElementById('chat-send');
+
+function appendMsg(role, html) {
+  const initials = role === 'user' ? 'You' : 'L';
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `
+    <div class="msg-avatar">${initials === 'You' ? 'Y' : 'L'}</div>
+    <div class="msg-bubble">${html}</div>`;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+function showTyping() {
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  div.id = 'typing-indicator';
+  div.innerHTML = `
+    <div class="msg-avatar">L</div>
+    <div class="msg-bubble">
+      <div class="typing-indicator">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    </div>`;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typing-indicator');
+  if (el) el.remove();
+}
+
+function buildBotHtml(data) {
+  let html = esc(data.answer);
+
+  if (data.precedents && data.precedents.length) {
+    html += '<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">';
+    data.precedents.forEach(c => {
+      html += `
+        <div class="case-ref">
+          <div class="case-ref-gr">G.R. No. ${esc(c.gr_no)}</div>
+          <div class="case-ref-title">${esc(c.title)}</div>
+          <a href="${esc(c.source_url)}" target="_blank" rel="noopener" class="case-ref-link">
+            View full case &rarr;
+          </a>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+async function sendChat() {
+  const q = chatInput.value.trim();
+  if (!q) return;
+
+  chatInput.value = '';
+  chatInput.style.height = 'auto';
+  appendMsg('user', esc(q));
+  showTyping();
+  chatSend.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q })
+    });
+
+    removeTyping();
+
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+    appendMsg('bot', buildBotHtml(data));
+
+  } catch (err) {
+    removeTyping();
+    appendMsg('bot', 'Sorry, I could not reach the server. Make sure the API is running on port 8000.');
+  } finally {
+    chatSend.disabled = false;
+    chatInput.focus();
+  }
+}
+
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+
+/* auto-grow textarea */
+chatInput.addEventListener('input', () => {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+});
+</script>
+</body>
+</html>

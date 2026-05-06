@@ -1,9 +1,39 @@
 from fastapi import FastAPI
-from api.routers.health import router as health_router
-from api.routers.search import router as search_router
-from api.routers.chat import router as chat_router
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
-app = FastAPI(title="Legal RAG")
-app.include_router(health_router)
-app.include_router(search_router)
-app.include_router(chat_router)
+from api.routers import health, search, chat
+
+app = FastAPI(
+    title="Legal RAG",
+    description="Philippine Jurisprudence Search"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (OK for localhost)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API routers
+app.include_router(health.router)
+app.include_router(search.router)
+app.include_router(chat.router)
+
+# Serve static files from app/
+app_dir = Path(__file__).parent.parent / "app"
+if (app_dir / "static").exists():
+    app.mount("/static", StaticFiles(directory=str(app_dir / "static")), name="static")
+
+# Serve index.html as root
+@app.get("/")
+async def serve_index():
+    html_path = app_dir / "index.html"
+    if html_path.exists():
+        return FileResponse(html_path, media_type="text/html")
+    return {"message": "index.html not found"}
