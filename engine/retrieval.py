@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import text, or_
+from engine.config import settings
 
 
 class Retriever:
