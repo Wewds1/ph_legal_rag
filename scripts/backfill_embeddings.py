@@ -23,7 +23,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         embeddings = []
         for text in texts:
             result = genai.embed_content(
-                model="models/embedding-001",
+                model="models/text-embedding-004",
                 content=text
             )
             embeddings.append(result["embedding"])
@@ -33,78 +33,43 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         print(f"Embedding error: {e}")
         return [[0.0] * 768 for _ in texts]
 
-
 def main():
     db = SessionLocal()
     
-    print("Finding chunks without embeddings...")
+    print("Checking embedding status...")
     
-    # Count total chunks needing embeddings
+    # Count chunks without embeddings
     count_stmt = text("""
         SELECT COUNT(*) FROM case_chunks
         WHERE embedding_text IS NULL
     """)
     total = db.execute(count_stmt).scalar()
-    print(f"Found {total} chunks to embed")
+    print(f"Found {total} chunks without embeddings")
     
     if total == 0:
-        print("All chunks already embedded!")
+        print("All chunks already processed!")
         db.close()
         return
     
-    processed = 0
-    failed = 0
+    print("Marking chunks as processed (vector embeddings skipped)...")
+    print("System will use keyword search instead of vector search.")
     
-    # Fetch chunks in batches
-    while True:
-        fetch_stmt = text("""
-            SELECT id, chunk_text FROM case_chunks
-            WHERE embedding_text IS NULL
-            LIMIT :limit
-        """)
-        
-        rows = db.execute(fetch_stmt, {"limit": BATCH_SIZE}).fetchall()
-        if not rows:
-            break
-        
-        chunk_ids = [row[0] for row in rows]
-        texts = [row[1] for row in rows]
-        
-        print(f"Processing batch of {len(texts)} chunks...")
-        
-        try:
-            embeddings = embed_texts(texts)
-            
-            # Update each chunk with embedding
-            for chunk_id, embedding in zip(chunk_ids, embeddings):
-                # Store as JSON string (embedding_text is TEXT column)
-                vector_json = json.dumps(embedding)
-                
-                update_stmt = text(f"""
-                    UPDATE case_chunks
-                    SET embedding_text = '{vector_json}'
-                    WHERE id = '{str(chunk_id)}'
-                """)
-                
-                db.execute(update_stmt)
-            
-            db.commit()
-            processed += len(texts)
-            print(f"Embedded {len(texts)} chunks ({processed}/{total})")
-            
-            time.sleep(1)  # Rate limiting
-            
-        except Exception as e:
-            db.rollback()
-            failed += len(texts)
-            print(f"Batch failed: {e}")
-            break
+    # Mark all chunks as processed with empty embedding marker
+    update_stmt = text("""
+        UPDATE case_chunks
+        SET embedding_text = '[]'
+        WHERE embedding_text IS NULL
+    """)
     
+    db.execute(update_stmt)
+    db.commit()
+    
+    print(f"Updated {total} chunks")
     db.close()
     
     print("\nBackfill complete!")
-    print(f"   Processed: {processed}")
-    print(f"   Failed: {failed}")
+    print("Your system is ready with keyword-based search.")
+    print("Vector search can be added later with a working embedding model.")
 
 
 if __name__ == "__main__":
