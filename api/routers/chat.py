@@ -5,6 +5,7 @@ from api.schemas import SearchRequest
 from database.connection import get_db
 from engine.retrieval import Retriever
 from engine.generation import Generator
+from engine.validators import is_legal_question, should_reject_query
 
 
 router = APIRouter(tags=["chat"])

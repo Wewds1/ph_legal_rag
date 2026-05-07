@@ -1,0 +1,85 @@
+LEGAL RAG - Improvement Roadmap
+================================
+
+CONVERSATION & UX
+[ ] Add conversation memory (multi-turn context awareness)
+[ ] Store chat history in database per session
+[ ] Add typing indicator animations
+[ ] Better error messages for users
+[ ] Support follow-up questions ("Tell me more about...")
+
+SEARCH & RETRIEVAL
+[ ] Add semantic search with proper embedding model
+[ ] Implement Recall@K metrics for search quality
+[ ] Add search filters (date range, case type, justice)
+[ ] Fuzzy matching for misspelled G.R. numbers
+[ ] Search synonyms (labor = employment, libel = defamation)
+
+DATA & CONTENT
+[ ] Scrape more Philippine cases (currently ~4,789 chunks)
+[ ] Add recent 2025-2026 cases
+[ ] Add Supreme Court resolutions (not just decisions)
+[ ] Extract justice/ponencia/division metadata
+[ ] Add case summaries for quick previews
+
+LLM & GENERATION
+[ ] Add citation confidence scores
+[ ] Generate case comparisons ("Case A vs Case B")
+[ ] Add legal timeline analysis
+[ ] Support hypothetical legal questions
+[ ] Multi-language support (Tagalog, English)
+
+PERFORMANCE
+[ ] Add caching for frequent queries
+[ ] Implement result pagination
+[ ] Optimize chunk retrieval speed
+[ ] Add database query indexing
+[ ] CDN for static assets
+
+MONITORING & LOGGING
+[ ] Add query analytics dashboard
+[ ] Track search success rates
+[ ] Monitor API response times
+[ ] Log user feedback/ratings
+[ ] Error tracking (Sentry)
+
+INFRASTRUCTURE
+[ ] Auto-scale API on Render
+[ ] Set up CI/CD pipeline
+[ ] Add health checks and monitoring
+[ ] Database backups strategy
+[ ] API rate limiting
+
+TESTING
+[ ] Unit tests for parser, chunking, retrieval
+[ ] Integration tests for full pipeline
+[ ] Load testing (concurrent users)
+[ ] Regression tests for search quality
+
+DOCUMENTATION
+[ ] API documentation (Swagger/OpenAPI)
+[ ] Deployment guide
+[ ] User guide with examples
+[ ] Contributing guidelines
+[ ] Architecture diagrams
+
+FRONTEND/UI
+[ ] Mobile-responsive design improvements
+[ ] Dark mode toggle
+[ ] Download case PDFs
+[ ] Share results/citations
+[ ] Bookmarking favorite cases
+
+ADVANCED
+[ ] Vector embeddings with better model
+[ ] RAG fine-tuning on Philippine legal corpus
+[ ] Compare legal interpretations across cases
+[ ] Generate legal contracts based on cases
+[ ] Integration with legal databases (PCA, IBP)
+
+QUICK WINS (Easy, high impact)
+✓ Add conversation memory
+✓ Better error handling
+✓ Search filtering by date/type
+✓ Case comparison feature
+✓ Citation confidence scores
