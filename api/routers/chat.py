@@ -5,7 +5,7 @@ from database.connection import get_db
 from engine.retrieval import Retriever
 from engine.generation import Generator
 from engine.conversation import get_or_create_session, cleanup_expired_sessions
-from engine.validators import is_legal_question, should_reject_query
+from engine.validators import is_legal_question, should_reject_query, is_acknowledgement
 
 
 router = APIRouter(tags=["chat"])
@@ -60,6 +60,17 @@ def chat(
                 "session_id": session.session_id,
                 "conversation_history": session.history
             }
+            
+        if is_acknowledgement(request.query):
+                response_text = "No worries. If you want, I can break down your next legal step anytime."
+                session.add_message("assistant", response_text)
+                return {
+                    "answer": response_text,
+                    "precedents": [],
+                    "disclaimer": "research only, not legal advice fr.",
+                    "session_id": session.session_id,
+                    "conversation_history": session.history
+                }
         
         # Warn if query doesn't seem legal-related
         if not is_legal_question(request.query):

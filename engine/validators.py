@@ -28,3 +28,12 @@ def should_reject_query(query: str) -> bool:
     
     query_lower = query.lower()
     return any(keyword in query_lower for keyword in reject_keywords)
+
+
+def is_acknowledgement(query: str) -> bool:
+    q = query.lower().strip()
+    phrases = [
+        "thanks", "thank you", "ty", "got it", "i understand",
+        "noted", "okay", "ok", "sige", "salamat", "copy", "understood"
+    ]
+    return any(p in q for p in phrases)
