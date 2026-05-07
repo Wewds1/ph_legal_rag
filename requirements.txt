@@ -14,7 +14,8 @@ tenacity
 orjson
 streamlit
 tiktoken
-pytestfastapi
+pytest
+fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg[binary]
