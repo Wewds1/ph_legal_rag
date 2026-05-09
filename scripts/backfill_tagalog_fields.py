@@ -1,61 +1,69 @@
 """
 Backfill Tagalog translations into PostgreSQL and embed Tagalog text.
 
-This script is intentionally self-contained so one command can do the full job:
-    1. Read each processed case JSON.
-    2. Translate the case and each chunk if Tagalog text is missing.
-    3. Store the translated chunk text and its embedding in the database.
+What this script does:
+1. Reads each processed case JSON.
+2. Translates case text in smaller chunks so long decisions do not time out.
+3. Stores translated chunk text and embedding placeholders/values in the database.
+4. Caches translated case text back into the JSON file.
 
-Learn:
-    1. How to make a backfill resilient to missing intermediate files.
-    2. How to match cases by either `gr_no` or `source_url`.
-    3. How to keep translated text cached back into the JSON file.
+This version uses the newer google.genai SDK.
 """
 
+from __future__ import annotations
+
 import json
+import logging
+import time
 from pathlib import Path
 from typing import Optional
-import google.generativeai as genai
+
+from google import genai
 from sqlalchemy import text
+
 from database.connection import SessionLocal
 from engine.config import settings
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.llm_api_key)
+client = genai.Client(api_key=settings.llm_api_key)
 
 PROCESSED_DIR = Path("data/processed")
 BATCH_SIZE = 10
+MAX_TRANSLATE_CHARS = 2200
+MAX_RETRIES = 3
 
 
-def _save_case_translation(filepath: Path, case_data: dict, tagalog_title: Optional[str], tagalog_text: Optional[str]) -> None:
+def _save_case_translation(
+    filepath: Path,
+    case_data: dict,
+    tagalog_title: Optional[str],
+    tagalog_text: Optional[str],
+) -> None:
     if tagalog_title:
         case_data["tagalog_title"] = tagalog_title
     if tagalog_text:
         case_data["tagalog_text"] = tagalog_text
+
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(case_data, f, ensure_ascii=False, indent=2)
 
-def ensure_schema():
-    """Add tagalog_text and tagalog_embedding columns if they don't exist."""
+
+def ensure_schema() -> None:
+    """Add Tagalog columns if they don't exist yet."""
     db = SessionLocal()
     try:
-        # Check and add tagalog_text column
         db.execute(text("""
-            ALTER TABLE case_chunks 
+            ALTER TABLE case_chunks
             ADD COLUMN IF NOT EXISTS tagalog_text TEXT;
         """))
-        
-        # Check and add tagalog_embedding column (store as text JSON for now)
         db.execute(text("""
-            ALTER TABLE case_chunks 
+            ALTER TABLE case_chunks
             ADD COLUMN IF NOT EXISTS tagalog_embedding TEXT DEFAULT '[]';
         """))
-        
         db.commit()
-        logger.info("✓ Schema updated with tagalog_text and tagalog_embedding")
+        logger.info("Schema updated with tagalog_text and tagalog_embedding")
     except Exception as e:
         logger.error(f"Schema error: {e}")
         db.rollback()
@@ -63,136 +71,249 @@ def ensure_schema():
         db.close()
 
 
-def embed_tagalog_text(text: str) -> Optional[list]:
-    """Embed Tagalog text using GenAI embedding model.
-    
-    Args:
-        text: Tagalog text to embed
-    
-    Returns:
-        Embedding vector or None on error
-    """
-    try:
-        # Try GenAI embedding API
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text
+def split_text(text_value: str, max_chars: int = MAX_TRANSLATE_CHARS) -> list[str]:
+    """Split long text into paragraph-aware chunks."""
+    text_value = (text_value or "").strip()
+    if not text_value:
+        return []
+
+    paragraphs = [part.strip() for part in text_value.split("\n\n") if part.strip()]
+    if not paragraphs:
+        return [text_value[:max_chars]]
+
+    chunks: list[str] = []
+    current = ""
+
+    for paragraph in paragraphs:
+        if len(paragraph) > max_chars:
+            if current:
+                chunks.append(current)
+                current = ""
+
+            start = 0
+            while start < len(paragraph):
+                chunks.append(paragraph[start:start + max_chars])
+                start += max_chars
+            continue
+
+        candidate = paragraph if not current else f"{current}\n\n{paragraph}"
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = paragraph
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+def call_with_retry(func, label: str):
+    """Retry helper for flaky translation/embedding calls."""
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return func()
+        except Exception as e:
+            last_error = e
+            if attempt == MAX_RETRIES:
+                break
+            sleep_seconds = 2 * attempt
+            logger.warning(
+                f"{label} failed on attempt {attempt}/{MAX_RETRIES}: {e}. "
+                f"Retrying in {sleep_seconds}s..."
+            )
+            time.sleep(sleep_seconds)
+
+    raise last_error
+
+
+def translate_chunk(text_value: str) -> Optional[str]:
+    """Translate one chunk of legal text to Filipino."""
+    text_value = (text_value or "").strip()
+    if not text_value:
+        return None
+
+    def _do_translate():
+        prompt = (
+            "Translate the following Philippine legal text to natural Filipino. "
+            "Preserve citations, case numbers, names, dates, and legal terms. "
+            "Do not summarize, explain, or add commentary.\n\n"
+            f"{text_value}"
         )
-        return result.get("embedding", None) if result else None
+        response = client.models.generate_content(
+            model=settings.llm_model,
+            contents=prompt,
+        )
+        return getattr(response, "text", None)
+
+    try:
+        translated = call_with_retry(_do_translate, "Translation")
+        translated = (translated or "").strip()
+        return translated or text_value
+    except Exception as e:
+        logger.warning(f"Translation error: {e}")
+        return text_value
+
+
+def translate_large_text(text_value: str) -> Optional[str]:
+    """Translate a long document by splitting it into smaller chunks first."""
+    text_value = (text_value or "").strip()
+    if not text_value:
+        return None
+
+    translated_parts: list[str] = []
+    for idx, chunk in enumerate(split_text(text_value), start=1):
+        translated = translate_chunk(chunk)
+        if translated:
+            translated_parts.append(translated)
+        else:
+            translated_parts.append(chunk)
+        logger.info(f"Translated chunk {idx}/{len(split_text(text_value))}")
+        time.sleep(0.2)
+
+    joined = "\n\n".join(translated_parts).strip()
+    return joined or None
+
+
+def embed_tagalog_text(text_value: str) -> Optional[list]:
+    """Embed text using the configured embedding model.
+
+    If the model is unavailable for the current API/account, the script
+    keeps going and stores an empty array so the translation step still completes.
+    """
+    text_value = (text_value or "").strip()
+    if not text_value:
+        return None
+
+    try:
+        response = client.models.embed_content(
+            model=settings.embedding_model,
+            contents=text_value,
+        )
+
+        embeddings = getattr(response, "embeddings", None)
+        if embeddings:
+            first_embedding = embeddings[0]
+            values = getattr(first_embedding, "values", None)
+            if values:
+                return list(values)
+
+        embedding = getattr(response, "embedding", None)
+        if embedding:
+            values = getattr(embedding, "values", None)
+            if values:
+                return list(values)
+
+        return None
     except Exception as e:
         logger.warning(f"Embedding error: {e}. Using placeholder.")
         return None
 
 
-def translate_text(text: str) -> Optional[str]:
-    """Translate English legal text to Filipino using the configured LLM."""
-    if not text:
-        return None
-
-    try:
-        model = genai.GenerativeModel(settings.llm_model)
-        prompt = (
-            "Translate the following Philippine legal text to natural Filipino. "
-            "Preserve citations, names, case numbers, and legal terms. "
-            "Do not summarize or add commentary.\n\n"
-            f"{text}"
-        )
-        response = model.generate_content(prompt)
-        return getattr(response, "text", None)
-    except Exception as e:
-        logger.warning(f"Translation error: {e}")
-        return None
-
-
-def ingest_tagalog_fields():
-    """Read translated JSON files and insert Tagalog fields into DB."""
-
+def ingest_tagalog_fields() -> None:
+    """Translate cases, update JSON cache, and write Tagalog text to DB."""
     db = SessionLocal()
     case_files = sorted(PROCESSED_DIR.glob("*.json"))
     processed = 0
-    
+
     try:
         for i, filepath in enumerate(case_files):
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     case_data = json.load(f)
-                
+
                 gr_no = case_data.get("gr_no")
                 source_url = case_data.get("source_url")
-
                 if not gr_no and not source_url:
                     continue
 
                 case_label = gr_no or source_url
                 logger.info(f"Ingesting {case_label}...")
 
-                # Fetch case from DB using the most reliable identifier available.
                 if gr_no:
-                    result = db.execute(text("""
-                        SELECT id FROM cases WHERE gr_no = :gr_no LIMIT 1
-                    """), {"gr_no": gr_no})
+                    result = db.execute(
+                        text("SELECT id FROM cases WHERE gr_no = :gr_no LIMIT 1"),
+                        {"gr_no": gr_no},
+                    )
                 else:
-                    result = db.execute(text("""
-                        SELECT id FROM cases WHERE source_url = :source_url LIMIT 1
-                    """), {"source_url": source_url})
+                    result = db.execute(
+                        text("SELECT id FROM cases WHERE source_url = :source_url LIMIT 1"),
+                        {"source_url": source_url},
+                    )
 
                 case_row = result.fetchone()
-                
                 if not case_row:
                     logger.warning(f"Case {case_label} not found in DB. Skipping.")
                     continue
-                
+
                 case_id = case_row[0]
 
-                # Translate the case text once and cache it back into the JSON file.
                 tagalog_title = case_data.get("tagalog_title")
                 tagalog_text = case_data.get("tagalog_text")
+
+                if not tagalog_title:
+                    tagalog_title = translate_chunk(case_data.get("title", ""))
+
                 if not tagalog_text:
-                    tagalog_title = tagalog_title or translate_text(case_data.get("title", ""))
-                    tagalog_text = translate_text(case_data.get("full_text") or case_data.get("clean_text", ""))
+                    source_text = case_data.get("clean_text") or case_data.get("full_text", "")
+                    tagalog_text = translate_large_text(source_text)
                     if tagalog_text:
                         _save_case_translation(filepath, case_data, tagalog_title, tagalog_text)
-                
-                # Get all chunks for this case.
-                chunks_result = db.execute(text("""
-                    SELECT id, chunk_text FROM case_chunks WHERE case_id = :case_id
-                """), {"case_id": case_id})
+
+                chunks_result = db.execute(
+                    text("""
+                        SELECT id, chunk_text
+                        FROM case_chunks
+                        WHERE case_id = :case_id
+                        ORDER BY chunk_index
+                    """),
+                    {"case_id": case_id},
+                )
                 chunks = chunks_result.fetchall()
 
-                # For each chunk, translate and embed the Tagalog version.
-                for chunk_id, chunk_text in chunks:
-                    translated_chunk = translate_text(chunk_text or "") or chunk_text or ""
-                    embedding = embed_tagalog_text(translated_chunk)
+                for chunk_index, (chunk_id, chunk_text) in enumerate(chunks, start=1):
+                    translated_chunk = translate_chunk(chunk_text or "")
+                    embedding = embed_tagalog_text(translated_chunk or "")
                     embedding_json = json.dumps(embedding) if embedding else "[]"
-                    
-                    db.execute(text("""
-                        UPDATE case_chunks 
-                        SET tagalog_text = :tagalog_text,
-                            tagalog_embedding = :embedding
-                        WHERE id = :chunk_id
-                    """), {"tagalog_text": translated_chunk, "embedding": embedding_json, "chunk_id": chunk_id})
-                
+
+                    db.execute(
+                        text("""
+                            UPDATE case_chunks
+                            SET tagalog_text = :tagalog_text,
+                                tagalog_embedding = :embedding
+                            WHERE id = :chunk_id
+                        """),
+                        {
+                            "tagalog_text": translated_chunk or "",
+                            "embedding": embedding_json,
+                            "chunk_id": chunk_id,
+                        },
+                    )
+
+                    logger.info(f"  chunk {chunk_index}/{len(chunks)} done")
+                    time.sleep(0.1)
+
                 db.commit()
                 processed += 1
-                logger.info(f"✓ {case_label} ingested ({processed}/{len(case_files)})")
-                
-                # Pause every N cases
+                logger.info(f"Done: {case_label} ({processed}/{len(case_files)})")
+
                 if (i + 1) % BATCH_SIZE == 0:
-                    logger.info(f"Batch done. Pausing...")
-                    import time
+                    logger.info("Batch pause...")
                     time.sleep(2)
-            
+
             except Exception as e:
                 logger.error(f"Error processing {filepath.name}: {e}")
                 db.rollback()
-        
-        logger.info(f"\n✓ Tagalog ingestion complete: {processed} cases processed")
-    
+
+        logger.info(f"Tagalog ingestion complete: {processed} cases processed")
     finally:
         db.close()
 
 
-def main():
+def main() -> None:
     logger.info("Starting Tagalog corpus backfill...")
     ensure_schema()
     ingest_tagalog_fields()
