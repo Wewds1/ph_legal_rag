@@ -1,13 +1,13 @@
 """
-Backfill Tagalog translations into PostgreSQL and embed Tagalog text.
+Backfill Tagalog translations into PostgreSQL using Ollama.
 
 What this script does:
 1. Reads each processed case JSON.
-2. Translates case text in smaller chunks so long decisions do not time out.
-3. Stores translated chunk text and embedding placeholders/values in the database.
+2. Translates case text in smaller chunks using a local/remote Ollama model.
+3. Stores translated chunk text in the database.
 4. Caches translated case text back into the JSON file.
 
-This version uses the newer google.genai SDK.
+This version uses Ollama (unlimited requests, no rate limits).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from google import genai
+from ollama import chat
 from sqlalchemy import text
 
 from database.connection import SessionLocal
@@ -27,12 +27,10 @@ from engine.config import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-client = genai.Client(api_key=settings.llm_api_key)
-
 PROCESSED_DIR = Path("data/processed")
 BATCH_SIZE = 10
 MAX_TRANSLATE_CHARS = 2200
-MAX_RETRIES = 3
+OLLAMA_MODEL = "deepseek-v4-flash:cloud"  # Change this to your Ollama model
 
 
 def _save_case_translation(
@@ -63,7 +61,7 @@ def ensure_schema() -> None:
             ADD COLUMN IF NOT EXISTS tagalog_embedding TEXT DEFAULT '[]';
         """))
         db.commit()
-        logger.info("Schema updated with tagalog_text and tagalog_embedding")
+        logger.info("✓ Schema updated with tagalog_text and tagalog_embedding")
     except Exception as e:
         logger.error(f"Schema error: {e}")
         db.rollback()
@@ -92,7 +90,7 @@ def split_text(text_value: str, max_chars: int = MAX_TRANSLATE_CHARS) -> list[st
 
             start = 0
             while start < len(paragraph):
-                chunks.append(paragraph[start:start + max_chars])
+                chunks.append(paragraph[start : start + max_chars])
                 start += max_chars
             continue
 
@@ -110,51 +108,30 @@ def split_text(text_value: str, max_chars: int = MAX_TRANSLATE_CHARS) -> list[st
     return chunks
 
 
-def call_with_retry(func, label: str):
-    """Retry helper for flaky translation/embedding calls."""
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            return func()
-        except Exception as e:
-            last_error = e
-            if attempt == MAX_RETRIES:
-                break
-            sleep_seconds = 2 * attempt
-            logger.warning(
-                f"{label} failed on attempt {attempt}/{MAX_RETRIES}: {e}. "
-                f"Retrying in {sleep_seconds}s..."
-            )
-            time.sleep(sleep_seconds)
-
-    raise last_error
-
-
 def translate_chunk(text_value: str) -> Optional[str]:
-    """Translate one chunk of legal text to Filipino."""
+    """Translate one chunk of legal text to Filipino using Ollama."""
     text_value = (text_value or "").strip()
     if not text_value:
         return None
 
-    def _do_translate():
+    try:
         prompt = (
             "Translate the following Philippine legal text to natural Filipino. "
             "Preserve citations, case numbers, names, dates, and legal terms. "
             "Do not summarize, explain, or add commentary.\n\n"
             f"{text_value}"
         )
-        response = client.models.generate_content(
-            model=settings.llm_model,
-            contents=prompt,
-        )
-        return getattr(response, "text", None)
 
-    try:
-        translated = call_with_retry(_do_translate, "Translation")
-        translated = (translated or "").strip()
+        response = chat(
+            model=OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        translated = (getattr(response, "message", None) or {}).get("content", "").strip()
         return translated or text_value
+
     except Exception as e:
-        logger.warning(f"Translation error: {e}")
+        logger.warning(f"Translation error: {e}. Using original text.")
         return text_value
 
 
@@ -164,53 +141,20 @@ def translate_large_text(text_value: str) -> Optional[str]:
     if not text_value:
         return None
 
+    chunks_list = split_text(text_value)
     translated_parts: list[str] = []
-    for idx, chunk in enumerate(split_text(text_value), start=1):
+
+    for idx, chunk in enumerate(chunks_list, start=1):
         translated = translate_chunk(chunk)
         if translated:
             translated_parts.append(translated)
         else:
             translated_parts.append(chunk)
-        logger.info(f"Translated chunk {idx}/{len(split_text(text_value))}")
-        time.sleep(0.2)
+        logger.info(f"  Translated chunk {idx}/{len(chunks_list)}")
+        time.sleep(0.1)
 
     joined = "\n\n".join(translated_parts).strip()
     return joined or None
-
-
-def embed_tagalog_text(text_value: str) -> Optional[list]:
-    """Embed text using the configured embedding model.
-
-    If the model is unavailable for the current API/account, the script
-    keeps going and stores an empty array so the translation step still completes.
-    """
-    text_value = (text_value or "").strip()
-    if not text_value:
-        return None
-
-    try:
-        response = client.models.embed_content(
-            model=settings.embedding_model,
-            contents=text_value,
-        )
-
-        embeddings = getattr(response, "embeddings", None)
-        if embeddings:
-            first_embedding = embeddings[0]
-            values = getattr(first_embedding, "values", None)
-            if values:
-                return list(values)
-
-        embedding = getattr(response, "embedding", None)
-        if embedding:
-            values = getattr(embedding, "values", None)
-            if values:
-                return list(values)
-
-        return None
-    except Exception as e:
-        logger.warning(f"Embedding error: {e}. Using placeholder.")
-        return None
 
 
 def ingest_tagalog_fields() -> None:
@@ -251,18 +195,20 @@ def ingest_tagalog_fields() -> None:
 
                 case_id = case_row[0]
 
+                # Translate case title if not already done
                 tagalog_title = case_data.get("tagalog_title")
-                tagalog_text = case_data.get("tagalog_text")
-
                 if not tagalog_title:
                     tagalog_title = translate_chunk(case_data.get("title", ""))
 
+                # Translate full case text if not already done
+                tagalog_text = case_data.get("tagalog_text")
                 if not tagalog_text:
                     source_text = case_data.get("clean_text") or case_data.get("full_text", "")
                     tagalog_text = translate_large_text(source_text)
                     if tagalog_text:
                         _save_case_translation(filepath, case_data, tagalog_title, tagalog_text)
 
+                # Get all chunks for this case
                 chunks_result = db.execute(
                     text("""
                         SELECT id, chunk_text
@@ -274,10 +220,9 @@ def ingest_tagalog_fields() -> None:
                 )
                 chunks = chunks_result.fetchall()
 
+                # Translate and save each chunk
                 for chunk_index, (chunk_id, chunk_text) in enumerate(chunks, start=1):
                     translated_chunk = translate_chunk(chunk_text or "")
-                    embedding = embed_tagalog_text(translated_chunk or "")
-                    embedding_json = json.dumps(embedding) if embedding else "[]"
 
                     db.execute(
                         text("""
@@ -288,33 +233,33 @@ def ingest_tagalog_fields() -> None:
                         """),
                         {
                             "tagalog_text": translated_chunk or "",
-                            "embedding": embedding_json,
+                            "embedding": "[]",  # Embeddings via Ollama later if needed
                             "chunk_id": chunk_id,
                         },
                     )
 
                     logger.info(f"  chunk {chunk_index}/{len(chunks)} done")
-                    time.sleep(0.1)
+                    time.sleep(0.05)
 
                 db.commit()
                 processed += 1
-                logger.info(f"Done: {case_label} ({processed}/{len(case_files)})")
+                logger.info(f"✓ {case_label} ingested ({processed}/{len(case_files)})")
 
                 if (i + 1) % BATCH_SIZE == 0:
                     logger.info("Batch pause...")
-                    time.sleep(2)
+                    time.sleep(1)
 
             except Exception as e:
                 logger.error(f"Error processing {filepath.name}: {e}")
                 db.rollback()
 
-        logger.info(f"Tagalog ingestion complete: {processed} cases processed")
+        logger.info(f"\n✓ Tagalog ingestion complete: {processed} cases processed")
     finally:
         db.close()
 
 
 def main() -> None:
-    logger.info("Starting Tagalog corpus backfill...")
+    logger.info(f"Starting Tagalog corpus backfill with Ollama model: {OLLAMA_MODEL}")
     ensure_schema()
     ingest_tagalog_fields()
 
