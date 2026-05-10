@@ -30,8 +30,7 @@ logger = logging.getLogger(__name__)
 PROCESSED_DIR = Path("data/processed")
 BATCH_SIZE = 10
 MAX_TRANSLATE_CHARS = 2200
-OLLAMA_MODEL = "deepseek-v4-flash:cloud"  # Change this to your Ollama model
-
+OLLAMA_MODEL = "minimax-m2.5:cloud" 
 
 def _save_case_translation(
     filepath: Path,
