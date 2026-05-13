@@ -213,7 +213,7 @@ def ingest_tagalog_fields() -> None:
                         SELECT id, chunk_text
                         FROM case_chunks
                         WHERE case_id = :case_id
-                        ORDER BY chunk_index
+                        ORDR BY chunk_index
                     """),
                     {"case_id": case_id},
                 )
